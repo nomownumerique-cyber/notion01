@@ -1,8 +1,9 @@
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { and, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, lte, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './schema.ts';
+import { parseDate } from '../domain/calendar.ts';
 
 const scrypt = promisify(scryptCallback);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -102,6 +103,20 @@ export function createStore(db: Database) {
       const text = input.trim(); if (!text || text.length > 10000) throw new Error('Invalid draft');
       const updated = await db.update(schema.posts).set({ text, updatedAt: new Date() }).where(and(eq(schema.posts.id, id), eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.status, 'draft'))).returning({ id: schema.posts.id });
       return updated.length === 1;
+    },
+    async planDraft(token: string | undefined, id: string, dateInput: string, categoryInput: string) {
+      const actor = await requireUser(token); if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
+      if (!validId(id)) throw new Error('Invalid draft');
+      if (dateInput && (!parseDate(dateInput) || dateInput < '1901-01-01' || dateInput > '2098-12-31')) throw new Error('Invalid planning date');
+      const category = categoryInput.trim(); if (category.length > 80) throw new Error('Invalid category');
+      const updated = await db.update(schema.posts).set({ plannedDate: dateInput || null, category: category || null, updatedAt: new Date() }).where(and(eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.id, id), eq(schema.posts.status, 'draft'))).returning({ id: schema.posts.id });
+      return updated.length === 1;
+    },
+    async listPlannedDrafts(token: string | undefined, start: string, end: string) {
+      const actor = await requireUser(token);
+      const from = parseDate(start), to = parseDate(end);
+      if (!from || !to || to.getTime() < from.getTime() || to.getTime() - from.getTime() > 41 * 86400000) throw new Error('Invalid calendar range');
+      return db.select().from(schema.posts).where(and(eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.status, 'draft'), gte(schema.posts.plannedDate, start), lte(schema.posts.plannedDate, end))).orderBy(schema.posts.plannedDate, schema.posts.createdAt).limit(501);
     },
     async listCompetitors(token: string | undefined) {
       const actor = await requireUser(token);

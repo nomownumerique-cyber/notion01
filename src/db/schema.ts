@@ -18,6 +18,7 @@ export const sessions = pgTable('sessions', {
 export const posts = pgTable('posts', {
   id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   text: text('text').notNull(), status: varchar('status', { length: 20 }).notNull().default('draft'),
+  plannedDate: date('planned_date'), category: varchar('category', { length: 80 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 export const authAttempts = pgTable('auth_attempts', {

@@ -15,7 +15,7 @@ let socket, app;
 try {
   await database.exec(await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
   const dbPort = await freePort(), appPort = await freePort();
-  socket = new PGLiteSocketServer({ db: database, port: dbPort, host: '127.0.0.1' }); await socket.start();
+  socket = new PGLiteSocketServer({ db: database, port: dbPort, host: '127.0.0.1', maxConnections: 20 }); await socket.start();
   const env = { DATABASE_URL: `postgresql://postgres:postgres@127.0.0.1:${dbPort}/postgres`, PORT: String(appPort), NEXT_TELEMETRY_DISABLED: '1' };
   await wait(run('npm', ['run', 'migrate'], env));
   await wait(run('npm', ['run', 'migrate'], env));

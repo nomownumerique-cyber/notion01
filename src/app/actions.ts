@@ -60,3 +60,8 @@ export async function deleteObservation(form: FormData) {
   catch { redirect('/competitors?error=1'); }
   redirect('/competitors');
 }
+export async function planDraft(form: FormData) {
+  try { if (!(await store.planDraft(await token(), value(form, 'id'), value(form, 'plannedDate'), value(form, 'category')))) throw new Error('Not found'); }
+  catch { redirect('/drafts?error=1'); }
+  redirect('/drafts');
+}

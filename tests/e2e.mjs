@@ -23,6 +23,20 @@ try {
   await page.reload();
   assert.equal(await page.getByLabel('Modifier le texte').inputValue(), 'Brouillon modifié A');
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-drafts-desktop.png'), fullPage: true });
+  const planDate = new Date().toISOString().slice(0, 10);
+  await page.getByText('Organiser ce brouillon').click();
+  await page.getByLabel('Date de planification').fill(planDate);
+  await page.getByLabel('Catégorie').fill('Campagne locale');
+  await Promise.all([page.waitForResponse(r => r.request().method() === 'POST' && r.url().includes('/drafts')), page.getByRole('button', { name: 'Enregistrer la planification' }).click()]);
+  await page.goto(`${base}/planner?view=month&date=${planDate}`);
+  await page.getByText('Brouillon modifié A').waitFor();
+  assert.match(await page.locator('main').innerText(), /aucune publication automatique/i);
+  assert.match(await page.locator('main').innerText(), /Campagne locale/);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-planner-desktop.png'), fullPage: true });
+  await page.getByRole('link', { name: 'Semaine', exact: true }).click();
+  await page.waitForURL('**/planner?view=week*');
+  await page.getByText('Brouillon modifié A').waitFor();
+  assert.equal(await page.locator('.calendar-day').count(), 7);
   const b = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const mobile = await b.newPage();
   await mobile.goto(`${base}/register`);
@@ -36,6 +50,10 @@ try {
   assert.equal(await mobile.getByText('Brouillon modifié A').count(), 0);
   assert.match(await mobile.locator('main').innerText(), /Aucun brouillon/);
   if (process.env.SCREENSHOT_DIR) await mobile.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-drafts-mobile.png'), fullPage: true });
+  await mobile.goto(`${base}/planner?view=week&date=${planDate}`);
+  assert.equal(await mobile.getByText('Brouillon modifié A').count(), 0);
+  assert.equal(await mobile.locator('.calendar-day').count(), 7);
+  if (process.env.SCREENSHOT_DIR) await mobile.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-planner-mobile.png'), fullPage: true });
   await page.getByRole('link', { name: 'Concurrents', exact: true }).click();
   await page.waitForURL('**/competitors');
   await page.getByLabel('Nom', { exact: true }).fill('Concurrent A');
@@ -70,6 +88,6 @@ try {
   await page.getByLabel('Mot de passe').fill('long-test-password-A');
   await page.getByRole('button', { name: 'Se connecter' }).click();
   await page.waitForURL('**/dashboard');
-  console.log('E2E passed: registration, sign-in/out, drafts, competitor records, tenant isolation, desktop and mobile.');
+  console.log('E2E passed: registration, sign-in/out, drafts, calendar, competitor records, tenant isolation, desktop and mobile.');
   await a.close(); await b.close();
 } finally { await browser.close(); }

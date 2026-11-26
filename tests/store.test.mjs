@@ -9,6 +9,7 @@ import * as schema from '../src/db/schema.ts';
 const client = new PGlite();
 await client.exec(await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
 await client.exec(await readFile(new URL('../migrations/0002_competitors.sql', import.meta.url), 'utf8'));
+await client.exec(await readFile(new URL('../migrations/0003_content_planner.sql', import.meta.url), 'utf8'));
 const store = createStore(drizzle(client, { schema }));
 let alice, bob, aliceDraft;
 test('register accounts and establish isolated workspaces', async () => {
@@ -59,6 +60,26 @@ test('repeated authentication attempts are rate limited', async () => {
   for (let i = 0; i < 10; i++) await assert.rejects(store.login('unknown@example.com', 'incorrect password value'), /Invalid credentials/);
   await assert.rejects(store.login('unknown@example.com', 'incorrect password value'), /Too many attempts/);
 });
+test('planning is tenant-scoped and does not change publication status', async () => {
+  const draft = await store.createDraft(alice, 'Planned text');
+  assert.equal(await store.planDraft(bob, draft.id, '2026-02-12', 'Campaign'), false);
+  assert.equal(await store.planDraft(alice, draft.id, '2026-02-12', '  Campaign  '), true);
+  const planned = await store.listPlannedDrafts(alice, '2026-02-01', '2026-02-28');
+  assert.equal(planned.length, 1); assert.equal(planned[0].plannedDate, '2026-02-12');
+  assert.equal(planned[0].category, 'Campaign'); assert.equal(planned[0].status, 'draft');
+  assert.equal((await store.listPlannedDrafts(bob, '2026-02-01', '2026-02-28')).length, 0);
+  assert.equal(await store.planDraft(alice, draft.id, '', ''), true);
+  assert.equal((await store.listPlannedDrafts(alice, '2026-02-01', '2026-02-28')).length, 0);
+  await store.deleteDraft(alice, draft.id);
+});
+test('planner rejects invalid dates, categories, and ranges', async () => {
+  const draft = await store.createDraft(alice, 'Test');
+  await assert.rejects(store.planDraft(alice, draft.id, '2026-02-30', ''), /Invalid planning date/);
+  await assert.rejects(store.planDraft(alice, draft.id, '2026-02-01', 'a'.repeat(81)), /Invalid category/);
+  await assert.rejects(store.listPlannedDrafts(alice, '2026-02-01', '2026-04-01'), /Invalid calendar range/);
+  await assert.rejects(store.listPlannedDrafts('bad', '2026-02-01', '2026-02-07'), /Unauthorized/);
+  await store.deleteDraft(alice, draft.id);
+});
 test('competitors and observations are tenant-isolated and deletions cascade', async () => {
   const rival = await store.createCompetitor(alice, 'Shop X', 'https://example.com/shop');
   assert.deepEqual((await store.listCompetitors(alice)).map(c => c.name), ['Shop X']);
@@ -88,6 +109,7 @@ test('reviewers can read competitors but cannot change them', async () => {
   await client.query("UPDATE memberships SET role = 'reviewer' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
   await store.listCompetitors(alice);
   await assert.rejects(store.createCompetitor(alice, 'Shop', 'https://example.com'), /Forbidden/);
+  await assert.rejects(store.planDraft(alice, '00000000-0000-4000-8000-000000000000', '2026-01-01', ''), /Forbidden/);
   await client.query("UPDATE memberships SET role = 'owner' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
 });
 test('removing membership immediately revokes access', async () => {
