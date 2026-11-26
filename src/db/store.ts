@@ -1,10 +1,11 @@
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { and, desc, eq, gt, gte, lte, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, gte, lte, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './schema.ts';
 import { parseDate } from '../domain/calendar.ts';
 import { validReportRange } from '../domain/content-report.ts';
+import { dashboardPeriod } from '../domain/dashboard-period.ts';
 import { transition, type Role, type Status } from '../domain/editorial.ts';
 
 const scrypt = promisify(scryptCallback);
@@ -124,6 +125,13 @@ export function createStore(db: Database) {
       const actor = await requireUser(token);
       if (!validReportRange(start, end)) throw new Error('Invalid report range');
       return db.select({ plannedDate: schema.posts.plannedDate, status: schema.posts.status, category: schema.posts.category, text: schema.posts.text }).from(schema.posts).where(and(eq(schema.posts.tenantId, actor.tenantId), gte(schema.posts.plannedDate, start), lte(schema.posts.plannedDate, end))).orderBy(schema.posts.plannedDate, schema.posts.createdAt, schema.posts.id).limit(501);
+    },
+    async dashboardCounts(token: string | undefined, start: string, end: string) {
+      const actor = await requireUser(token), period = dashboardPeriod(start, end);
+      if (!period) throw new Error('Invalid dashboard period');
+      const getCounts = (from: string, to: string) => db.select({ status: schema.posts.status, count: count() }).from(schema.posts).where(and(eq(schema.posts.tenantId, actor.tenantId), gte(schema.posts.plannedDate, from), lte(schema.posts.plannedDate, to))).groupBy(schema.posts.status);
+      const [current, previous] = await Promise.all([getCounts(period.start, period.end), getCounts(period.previousStart, period.previousEnd)]);
+      return { period, current, previous };
     },
     async listEditorial(token: string | undefined) {
       const actor = await requireUser(token);

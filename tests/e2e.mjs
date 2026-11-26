@@ -33,6 +33,19 @@ try {
   assert.match(await page.locator('main').innerText(), /aucune publication automatique/i);
   assert.match(await page.locator('main').innerText(), /Campagne locale/);
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-planner-desktop.png'), fullPage: true });
+  await page.goto(`${base}/dashboard?start=${planDate}&end=${planDate}`);
+  const draftMetric = page.locator('.metric').filter({ has: page.getByText('Brouillons', { exact: true }) });
+  assert.equal(await draftMetric.locator('strong').innerText(), '1');
+  assert.match(await draftMetric.innerText(), /Période précédente : 0/);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-dashboard-desktop.png'), fullPage: true });
+  await page.goto(`${base}/dashboard?start=2026-02-30&end=2026-03-01`);
+  assert.match(await page.locator('main').getByRole('alert').innerText(), /Période invalide/);
+  await page.getByLabel('Du', { exact: true }).fill(planDate);
+  await page.getByLabel('Au', { exact: true }).fill(planDate);
+  await page.getByRole('button', { name: 'Appliquer' }).click();
+  await page.waitForURL(`**/dashboard?start=${planDate}&end=${planDate}`);
+  assert.equal(await draftMetric.locator('strong').innerText(), '1');
+  await page.goto(`${base}/planner?view=month&date=${planDate}`);
   await page.getByRole('link', { name: 'Semaine', exact: true }).click();
   await page.waitForURL('**/planner?view=week*');
   await page.getByText('Brouillon modifié A').waitFor();
@@ -61,6 +74,9 @@ try {
   await mobile.getByLabel('Mot de passe').fill('long-test-password-B');
   await mobile.getByRole('button', { name: 'Créer mon compte' }).click();
   await mobile.waitForURL('**/dashboard');
+  await mobile.goto(`${base}/dashboard?start=${planDate}&end=${planDate}`);
+  assert.equal(await mobile.locator('.metric').filter({ has: mobile.getByText('Brouillons', { exact: true }) }).locator('strong').innerText(), '0');
+  if (process.env.SCREENSHOT_DIR) await mobile.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-dashboard-mobile.png'), fullPage: true });
   await mobile.getByRole('link', { name: 'Brouillons', exact: true }).click();
   await mobile.waitForURL('**/drafts');
   assert.equal(await mobile.getByText('Brouillon modifié A').count(), 0);
@@ -121,6 +137,6 @@ try {
   await page.getByLabel('Mot de passe').fill('long-test-password-A');
   await page.getByRole('button', { name: 'Se connecter' }).click();
   await page.waitForURL('**/dashboard');
-  console.log('E2E passed: registration, sign-in/out, drafts, calendar, approvals, CSV exports, competitor records, tenant isolation, desktop and mobile.');
+  console.log('E2E passed: registration, sign-in/out, drafts, calendar, dashboard comparisons, approvals, CSV exports, competitor records, tenant isolation, desktop and mobile.');
   await a.close(); await b.close();
 } finally { await browser.close(); }

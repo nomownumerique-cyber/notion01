@@ -81,6 +81,22 @@ test('planner rejects invalid dates, categories, and ranges', async () => {
   await assert.rejects(store.listPlannedDrafts('bad', '2026-02-01', '2026-02-07'), /Unauthorized/);
   await store.deleteDraft(alice, draft.id);
 });
+test('dashboard aggregates exact tenant-scoped status counts for both periods', async () => {
+  const first = await store.createDraft(alice, 'Current');
+  const prior = await store.createDraft(alice, 'Previous');
+  const undated = await store.createDraft(alice, 'No date');
+  await store.planDraft(alice, first.id, '2026-02-03', '');
+  await store.planDraft(alice, prior.id, '2026-01-31', '');
+  await store.transitionEditorial(alice, first.id, 'review', 1);
+  const result = await store.dashboardCounts(alice, '2026-02-01', '2026-02-03');
+  assert.deepEqual(result.current, [{ status: 'review', count: 1 }]);
+  assert.deepEqual(result.previous, [{ status: 'draft', count: 1 }]);
+  assert.deepEqual((await store.dashboardCounts(bob, '2026-02-01', '2026-02-03')).current, []);
+  await assert.rejects(store.dashboardCounts('bad', '2026-02-01', '2026-02-03'), /Unauthorized/);
+  await assert.rejects(store.dashboardCounts(alice, '2026-02-30', '2026-03-01'), /Invalid dashboard period/);
+  await store.transitionEditorial(alice, first.id, 'draft', 2);
+  for (const row of [first, prior, undated]) await store.deleteDraft(alice, row.id);
+});
 test('editorial workflow isolates tenants and logs real transitions', async () => {
   const idea = await store.createIdea(alice, 'Launch idea');
   await assert.rejects(store.transitionEditorial(bob, idea.id, 'draft', idea.version), /not found/);
