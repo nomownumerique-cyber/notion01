@@ -4,6 +4,8 @@ import { and, desc, eq, gt, gte, lte, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './schema.ts';
 import { parseDate } from '../domain/calendar.ts';
+import { validReportRange } from '../domain/content-report.ts';
+import { transition, type Role, type Status } from '../domain/editorial.ts';
 
 const scrypt = promisify(scryptCallback);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -101,7 +103,7 @@ export function createStore(db: Database) {
       if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('Invalid draft');
       const text = input.trim(); if (!text || text.length > 10000) throw new Error('Invalid draft');
-      const updated = await db.update(schema.posts).set({ text, updatedAt: new Date() }).where(and(eq(schema.posts.id, id), eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.status, 'draft'))).returning({ id: schema.posts.id });
+      const updated = await db.update(schema.posts).set({ text, updatedAt: new Date(), version: sql`${schema.posts.version} + 1` }).where(and(eq(schema.posts.id, id), eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.status, 'draft'))).returning({ id: schema.posts.id });
       return updated.length === 1;
     },
     async planDraft(token: string | undefined, id: string, dateInput: string, categoryInput: string) {
@@ -109,14 +111,45 @@ export function createStore(db: Database) {
       if (!validId(id)) throw new Error('Invalid draft');
       if (dateInput && (!parseDate(dateInput) || dateInput < '1901-01-01' || dateInput > '2098-12-31')) throw new Error('Invalid planning date');
       const category = categoryInput.trim(); if (category.length > 80) throw new Error('Invalid category');
-      const updated = await db.update(schema.posts).set({ plannedDate: dateInput || null, category: category || null, updatedAt: new Date() }).where(and(eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.id, id), eq(schema.posts.status, 'draft'))).returning({ id: schema.posts.id });
+      const updated = await db.update(schema.posts).set({ plannedDate: dateInput || null, category: category || null, updatedAt: new Date(), version: sql`${schema.posts.version} + 1` }).where(and(eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.id, id), eq(schema.posts.status, 'draft'))).returning({ id: schema.posts.id });
       return updated.length === 1;
     },
     async listPlannedDrafts(token: string | undefined, start: string, end: string) {
       const actor = await requireUser(token);
       const from = parseDate(start), to = parseDate(end);
       if (!from || !to || to.getTime() < from.getTime() || to.getTime() - from.getTime() > 41 * 86400000) throw new Error('Invalid calendar range');
-      return db.select().from(schema.posts).where(and(eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.status, 'draft'), gte(schema.posts.plannedDate, start), lte(schema.posts.plannedDate, end))).orderBy(schema.posts.plannedDate, schema.posts.createdAt).limit(501);
+      return db.select().from(schema.posts).where(and(eq(schema.posts.tenantId, actor.tenantId), gte(schema.posts.plannedDate, start), lte(schema.posts.plannedDate, end))).orderBy(schema.posts.plannedDate, schema.posts.createdAt).limit(501);
+    },
+    async reportPlannedContent(token: string | undefined, start: string, end: string) {
+      const actor = await requireUser(token);
+      if (!validReportRange(start, end)) throw new Error('Invalid report range');
+      return db.select({ plannedDate: schema.posts.plannedDate, status: schema.posts.status, category: schema.posts.category, text: schema.posts.text }).from(schema.posts).where(and(eq(schema.posts.tenantId, actor.tenantId), gte(schema.posts.plannedDate, start), lte(schema.posts.plannedDate, end))).orderBy(schema.posts.plannedDate, schema.posts.createdAt, schema.posts.id).limit(501);
+    },
+    async listEditorial(token: string | undefined) {
+      const actor = await requireUser(token);
+      return db.select().from(schema.posts).where(eq(schema.posts.tenantId, actor.tenantId)).orderBy(desc(schema.posts.updatedAt)).limit(101);
+    },
+    async listEditorialEvents(token: string | undefined) {
+      const actor = await requireUser(token);
+      return db.select({ id: schema.editorialEvents.id, postId: schema.editorialEvents.postId, fromStatus: schema.editorialEvents.fromStatus, toStatus: schema.editorialEvents.toStatus, actorEmail: schema.users.email, createdAt: schema.editorialEvents.createdAt }).from(schema.editorialEvents).innerJoin(schema.users, eq(schema.editorialEvents.actorUserId, schema.users.id)).where(eq(schema.editorialEvents.tenantId, actor.tenantId)).orderBy(desc(schema.editorialEvents.createdAt)).limit(501);
+    },
+    async createIdea(token: string | undefined, input: string) {
+      const actor = await requireUser(token); if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
+      const text = input.trim(); if (!text || text.length > 10000) throw new Error('Invalid idea');
+      const [post] = await db.insert(schema.posts).values({ id: randomUUID(), tenantId: actor.tenantId, text, status: 'idea' }).returning();
+      return post;
+    },
+    async transitionEditorial(token: string | undefined, id: string, target: string, expectedVersion: number) {
+      const actor = await requireUser(token);
+      if (!validId(id) || !['draft', 'review', 'approved'].includes(target) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid transition');
+      const [post] = await db.select().from(schema.posts).where(and(eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.id, id))).limit(1);
+      if (!post) throw new Error('Content not found');
+      const next = transition({ tenantId: post.tenantId, status: post.status as Status, text: post.text, scheduledAt: null, version: post.version }, { tenantId: actor.tenantId, role: actor.role as Role }, target as Status, expectedVersion, new Date());
+      await db.transaction(async tx => {
+        const updated = await tx.update(schema.posts).set({ status: next.status, version: next.version, updatedAt: new Date() }).where(and(eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.id, id), eq(schema.posts.version, expectedVersion), eq(schema.posts.status, post.status))).returning({ id: schema.posts.id });
+        if (updated.length !== 1) throw new Error('Version conflict');
+        await tx.insert(schema.editorialEvents).values({ id: randomUUID(), tenantId: actor.tenantId, postId: post.id, actorUserId: actor.userId, fromStatus: post.status, toStatus: next.status });
+      });
     },
     async listCompetitors(token: string | undefined) {
       const actor = await requireUser(token);

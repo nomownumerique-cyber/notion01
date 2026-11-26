@@ -18,7 +18,7 @@ export const sessions = pgTable('sessions', {
 export const posts = pgTable('posts', {
   id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   text: text('text').notNull(), status: varchar('status', { length: 20 }).notNull().default('draft'),
-  plannedDate: date('planned_date'), category: varchar('category', { length: 80 }),
+  plannedDate: date('planned_date'), category: varchar('category', { length: 80 }), version: integer('version').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 export const authAttempts = pgTable('auth_attempts', {
@@ -35,3 +35,10 @@ export const competitorObservations = pgTable('competitor_observations', {
   kind: varchar('kind', { length: 20 }).notNull(), note: text('note').notNull(), sourceUrl: text('source_url').notNull(),
   observedDate: date('observed_date').notNull(), collectedAt: timestamp('collected_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [foreignKey({ columns: [t.tenantId, t.competitorId], foreignColumns: [competitors.tenantId, competitors.id] }).onDelete('cascade')]);
+
+export const editorialEvents = pgTable('editorial_events', {
+  id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull(), postId: uuid('post_id').notNull(),
+  actorUserId: uuid('actor_user_id').notNull().references(() => users.id),
+  fromStatus: varchar('from_status', { length: 20 }).notNull(), toStatus: varchar('to_status', { length: 20 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

@@ -65,3 +65,16 @@ export async function planDraft(form: FormData) {
   catch { redirect('/drafts?error=1'); }
   redirect('/drafts');
 }
+export async function createIdea(form: FormData) {
+  try { await store.createIdea(await token(), value(form, 'text')); }
+  catch { redirect('/workflow?error=1'); }
+  redirect('/workflow');
+}
+export async function changeEditorialStatus(form: FormData) {
+  try {
+    const version = value(form, 'version');
+    if (!/^\d{1,10}$/.test(version)) throw new Error('Invalid version');
+    await store.transitionEditorial(await token(), value(form, 'id'), value(form, 'target'), Number(version));
+  } catch { redirect('/workflow?error=1'); }
+  redirect('/workflow');
+}
