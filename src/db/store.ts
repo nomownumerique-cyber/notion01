@@ -172,6 +172,11 @@ export function createStore(db: Database) {
       const actor = await requireUser(token);
       return db.select().from(schema.competitors).where(eq(schema.competitors.tenantId, actor.tenantId)).orderBy(desc(schema.competitors.createdAt)).limit(100);
     },
+    async reportCompetitorObservations(token: string | undefined, start: string, end: string) {
+      const actor = await requireUser(token);
+      if (!validReportRange(start, end)) throw new Error('Invalid report range');
+      return db.select({ name: schema.competitors.name, publicUrl: schema.competitors.publicUrl, kind: schema.competitorObservations.kind, note: schema.competitorObservations.note, sourceUrl: schema.competitorObservations.sourceUrl, observedDate: schema.competitorObservations.observedDate, collectedAt: schema.competitorObservations.collectedAt }).from(schema.competitorObservations).innerJoin(schema.competitors, and(eq(schema.competitorObservations.tenantId, schema.competitors.tenantId), eq(schema.competitorObservations.competitorId, schema.competitors.id))).where(and(eq(schema.competitorObservations.tenantId, actor.tenantId), gte(schema.competitorObservations.observedDate, start), lte(schema.competitorObservations.observedDate, end))).orderBy(schema.competitorObservations.observedDate, schema.competitorObservations.collectedAt, schema.competitorObservations.id).limit(501);
+    },
     async createCompetitor(token: string | undefined, nameInput: string, urlInput: string) {
       const actor = await requireUser(token); if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
       const name = nameInput.trim(); if (!name || name.length > 120) throw new Error('Invalid name');
