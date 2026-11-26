@@ -10,7 +10,10 @@ try {
   await page.goto(`${base}/`);
   assert.match(await page.locator('h1').innerText(), /Vos idées méritent/);
   assert.match(await page.locator('main').innerText(), /ne sont pas encore disponibles/);
-  assert.equal((await a.request.get(`${base}/landing-visual`)).headers()['content-type'], 'image/webp');
+  assert.equal((await a.request.get(`${base}/landing-visual?v=2`)).headers()['content-type'], 'image/webp');
+  assert.match(await page.locator('.landing-social-list').getAttribute('aria-label'), /Facebook.*Instagram.*TikTok.*YouTube.*LinkedIn.*Pinterest.*à venir/);
+  assert.equal(await page.locator('.landing-social-list .social-icon').count(), 6);
+  assert.match(await page.locator('.landing-photo-caption').innerText(), /Intégrations à venir/);
   assert.equal(await page.locator('.landing-photo').evaluate(img => img.complete && img.naturalWidth > 0), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-landing-desktop.png'), fullPage: true });

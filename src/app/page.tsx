@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { FaFacebook, FaInstagram, FaTiktok, FaYoutube, FaLinkedin, FaPinterest } from 'react-icons/fa6';
 
 export default function Home() {
   return <div className="landing">
@@ -14,7 +15,11 @@ export default function Home() {
           <div className="landing-actions"><Link href="/register" className="landing-button">Créer mon espace <span aria-hidden="true">↗</span></Link><a href="#fonctionnalites" className="landing-text-link">Découvrir les outils <span aria-hidden="true">↓</span></a></div>
           <p className="landing-hero-note">Une plateforme en développement, à votre rythme.</p>
         </div>
-        <div className="landing-photo-wrap"><img className="landing-photo" src="/landing-visual" alt="" /><div className="landing-photo-caption"><span className="landing-caption-icon" aria-hidden="true">+</span><span>Pour les idées<br/><strong>qui prennent vie.</strong></span></div><span className="landing-photo-index" aria-hidden="true">01 / À VOTRE RYTHME</span></div>
+        <div className="landing-photo-wrap"><img className="landing-photo" src="/landing-visual?v=2" alt="" />
+          <div className="landing-social-list" role="img" aria-label="Facebook, Instagram, TikTok, YouTube, LinkedIn et Pinterest : intégrations à venir.">
+            <span className="social-icon facebook" aria-hidden="true"><FaFacebook /></span><span className="social-icon instagram" aria-hidden="true"><FaInstagram /></span><span className="social-icon tiktok" aria-hidden="true"><FaTiktok /></span><span className="social-icon youtube" aria-hidden="true"><FaYoutube /></span><span className="social-icon linkedin" aria-hidden="true"><FaLinkedin /></span><span className="social-icon pinterest" aria-hidden="true"><FaPinterest /></span>
+          </div>
+          <div className="landing-photo-caption"><span className="landing-caption-icon" aria-hidden="true">+</span><span>Réseaux sociaux<br/><strong>Intégrations à venir</strong></span></div></div>
       </section>
       <section id="fonctionnalites" className="landing-features"><div className="landing-container">
         <div className="landing-section-head"><div><div className="landing-kicker"><span aria-hidden="true"></span> VOTRE ESPACE DE TRAVAIL</div><h2>Moins de dispersion.<br/><em>Plus de clarté.</em></h2></div><p>Des outils concrets pour passer de l’idée à un contenu prêt à être publié.</p></div>
