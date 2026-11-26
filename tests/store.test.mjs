@@ -10,6 +10,7 @@ const client = new PGlite();
 await client.exec(await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
 await client.exec(await readFile(new URL('../migrations/0002_competitors.sql', import.meta.url), 'utf8'));
 await client.exec(await readFile(new URL('../migrations/0003_content_planner.sql', import.meta.url), 'utf8'));
+await client.exec(await readFile(new URL('../migrations/0004_editorial_workflow.sql', import.meta.url), 'utf8'));
 const store = createStore(drizzle(client, { schema }));
 let alice, bob, aliceDraft;
 test('register accounts and establish isolated workspaces', async () => {
@@ -79,6 +80,43 @@ test('planner rejects invalid dates, categories, and ranges', async () => {
   await assert.rejects(store.listPlannedDrafts(alice, '2026-02-01', '2026-04-01'), /Invalid calendar range/);
   await assert.rejects(store.listPlannedDrafts('bad', '2026-02-01', '2026-02-07'), /Unauthorized/);
   await store.deleteDraft(alice, draft.id);
+});
+test('editorial workflow isolates tenants and logs real transitions', async () => {
+  const idea = await store.createIdea(alice, 'Launch idea');
+  await assert.rejects(store.transitionEditorial(bob, idea.id, 'draft', idea.version), /not found/);
+  await store.transitionEditorial(alice, idea.id, 'draft', idea.version);
+  let post = (await store.listEditorial(alice)).find(p => p.id === idea.id);
+  await store.planDraft(alice, idea.id, '2026-02-12', 'Campaign');
+  await assert.rejects(store.transitionEditorial(alice, idea.id, 'review', post.version), /Version conflict/);
+  post = (await store.listEditorial(alice)).find(p => p.id === idea.id);
+  await store.transitionEditorial(alice, idea.id, 'review', post.version);
+  post = (await store.listEditorial(alice)).find(p => p.id === idea.id);
+  assert.equal((await store.listPlannedDrafts(alice, '2026-02-01', '2026-02-28')).find(p => p.id === idea.id).status, 'review');
+  assert.equal(await store.updateDraft(alice, idea.id, 'Changed without review'), false);
+  const actor = await store.current(alice);
+  await client.query("UPDATE memberships SET role = 'editor' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
+  await assert.rejects(store.transitionEditorial(alice, idea.id, 'approved', post.version), /Forbidden/);
+  await client.query("UPDATE memberships SET role = 'reviewer' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
+  await store.transitionEditorial(alice, idea.id, 'approved', post.version);
+  post = (await store.listEditorial(alice)).find(p => p.id === idea.id);
+  assert.equal(post.status, 'approved');
+  await assert.rejects(store.transitionEditorial(alice, idea.id, 'scheduled', post.version), /Invalid transition/);
+  assert.equal((await store.listEditorialEvents(alice)).filter(e => e.postId === idea.id).length, 3);
+  assert.equal((await store.listEditorialEvents(bob)).length, 0);
+  await client.query("UPDATE memberships SET role = 'owner' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
+  await store.transitionEditorial(alice, idea.id, 'draft', post.version);
+  await store.deleteDraft(alice, idea.id);
+  assert.equal((await store.listEditorialEvents(alice)).filter(e => e.postId === idea.id).length, 0);
+});
+test('workflow event failure rolls back the status change', async () => {
+  const idea = await store.createIdea(alice, 'Atomic update');
+  await client.exec("ALTER TABLE editorial_events ADD CONSTRAINT test_reject_draft CHECK (to_status <> 'draft')");
+  try {
+    await assert.rejects(store.transitionEditorial(alice, idea.id, 'draft', idea.version));
+    assert.equal((await store.listEditorial(alice)).find(p => p.id === idea.id).status, 'idea');
+  } finally { await client.exec('ALTER TABLE editorial_events DROP CONSTRAINT test_reject_draft'); }
+  await store.transitionEditorial(alice, idea.id, 'draft', idea.version);
+  await store.deleteDraft(alice, idea.id);
 });
 test('competitors and observations are tenant-isolated and deletions cascade', async () => {
   const rival = await store.createCompetitor(alice, 'Shop X', 'https://example.com/shop');
