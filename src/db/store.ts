@@ -99,6 +99,15 @@ export function createStore(db: Database) {
       const text = input.trim(); if (!text || text.length > 10000) throw new Error('Invalid draft');
       const [post] = await db.insert(schema.posts).values({ id: randomUUID(), tenantId: actor.tenantId, text, status: 'draft' }).returning(); return post;
     },
+    async reuseEditorial(token: string | undefined, id: string) {
+      const actor = await requireUser(token);
+      if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
+      if (!validId(id)) throw new Error('Invalid content');
+      const [source] = await db.select({ text: schema.posts.text, category: schema.posts.category }).from(schema.posts).where(and(eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.id, id))).limit(1);
+      if (!source) throw new Error('Content not found');
+      const [copy] = await db.insert(schema.posts).values({ id: randomUUID(), tenantId: actor.tenantId, text: source.text, category: source.category, status: 'draft', plannedDate: null }).returning();
+      return copy;
+    },
     async updateDraft(token: string | undefined, id: string, input: string) {
       const actor = await requireUser(token);
       if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');

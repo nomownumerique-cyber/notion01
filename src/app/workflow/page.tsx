@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { db } from '../../db/client';
 import { createStore } from '../../db/store';
-import { createIdea, changeEditorialStatus } from '../actions';
+import { createIdea, changeEditorialStatus, reuseEditorial } from '../actions';
 import { Shell } from '../shell';
 export const dynamic = 'force-dynamic';
 const labels: Record<string, string> = { idea: 'Idée', draft: 'Brouillon', review: 'En validation', approved: 'Validé' };
@@ -26,7 +26,7 @@ export default async function Workflow({ searchParams }: { searchParams: Promise
         const history = events.slice(0,500).filter(event => event.postId === post.id);
         return <article className="workflow-card" key={post.id}><span className="status">{labels[post.status] ?? post.status}</span><p className="draft-text">{post.text}</p>{post.plannedDate && <p className="hint">Date indicative : {post.plannedDate}{post.category ? ` · ${post.category}` : ''}</p>}
           {post.status === 'draft' && canEdit && <p><Link href="/drafts">Modifier dans Brouillons →</Link></p>}
-          <div className="workflow-actions">{actions.map(action => <form action={changeEditorialStatus} key={action.target}><input type="hidden" name="id" value={post.id}/><input type="hidden" name="version" value={post.version}/><input type="hidden" name="target" value={action.target}/><button type="submit">{action.label}</button></form>)}</div>
+          <div className="workflow-actions">{canEdit && <form action={reuseEditorial}><input type="hidden" name="id" value={post.id}/><button type="submit">Réutiliser en brouillon</button></form>}{actions.map(action => <form action={changeEditorialStatus} key={action.target}><input type="hidden" name="id" value={post.id}/><input type="hidden" name="version" value={post.version}/><input type="hidden" name="target" value={action.target}/><button type="submit">{action.label}</button></form>)}</div>
           {history.length > 0 && <details className="workflow-history"><summary>Historique des validations</summary><ul>{history.map(event => <li key={event.id}>{labels[event.fromStatus]} → {labels[event.toStatus]} · {event.actorEmail} · {dateLabel(event.createdAt)} UTC</li>)}</ul></details>}
         </article>;
       })}

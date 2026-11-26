@@ -78,3 +78,10 @@ export async function changeEditorialStatus(form: FormData) {
   } catch { redirect('/workflow?error=1'); }
   redirect('/workflow');
 }
+
+export async function reuseEditorial(form: FormData) {
+  let id: string;
+  try { id = (await store.reuseEditorial(await token(), value(form, 'id'))).id; }
+  catch { redirect('/workflow?error=1'); }
+  redirect(`/drafts?copied=1#draft-${id}`);
+}
