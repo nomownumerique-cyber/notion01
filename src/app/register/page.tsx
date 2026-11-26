@@ -1,0 +1,6 @@
+import Link from 'next/link';
+import { register } from '../actions';
+export default async function Register({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const error = (await searchParams).error;
+  return <main className="auth-shell"><section className="auth-card"><div className="brand"><span className="brand-mark">M</span> Marketing OS</div><div className="eyebrow">COMMENCER</div><h1>Créez votre espace.</h1><p className="muted">Un espace de travail pour vos contenus marketing.</p>{error && <p className="alert" role="alert">Inscription impossible. Vérifiez les champs ou réessayez plus tard.</p>}<form action={register} className="form"><label>Nom de l’espace<input name="workspace" required maxLength={120} autoComplete="organization" /></label><label>Email<input name="email" type="email" autoComplete="email" required maxLength={254}/></label><label>Mot de passe<input name="password" type="password" autoComplete="new-password" required minLength={12} maxLength={128}/><span className="hint">12 caractères minimum.</span></label><button type="submit">Créer mon compte <span aria-hidden="true">→</span></button></form><p className="switch">Déjà inscrit ? <Link href="/login">Se connecter</Link></p></section></main>;
+}

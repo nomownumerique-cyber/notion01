@@ -1,0 +1,35 @@
+{
+  "name": "ecommerce-marketing-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "migrate": "node scripts/migrate.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:e2e": "node scripts/test-e2e.mjs"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "next": "^16.4.6",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.6.0",
+    "@electric-sql/pglite-socket": "^0.3.0",
+    "@types/node": "^26.6.11",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "playwright": "^1.65.1",
+    "typescript": "^7.0.2"
+  }
+}
