@@ -22,6 +22,18 @@ async function verifyPassword(password: string, encoded: string): Promise<boolea
   return timingSafeEqual(expected, actual);
 }
 const DUMMY_HASH = `scrypt:${'0'.repeat(32)}:${'0'.repeat(128)}`;
+function publicUrl(input: string): string {
+  const raw = input.trim(); if (!raw || raw.length > 2048) throw new Error('Invalid public URL');
+  let url: URL; try { url = new URL(raw); } catch { throw new Error('Invalid public URL'); }
+  if (url.protocol !== 'https:' || url.username || url.password || !url.hostname || url.hostname === 'localhost') throw new Error('Invalid public URL');
+  return url.toString();
+}
+function validId(id: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id); }
+function validDate(input: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return false;
+  const parsed = new Date(`${input}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === input && input <= new Date().toISOString().slice(0, 10);
+}
 const expiry = () => new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
 type Database = NodePgDatabase<typeof schema>;
 
@@ -90,6 +102,43 @@ export function createStore(db: Database) {
       const text = input.trim(); if (!text || text.length > 10000) throw new Error('Invalid draft');
       const updated = await db.update(schema.posts).set({ text, updatedAt: new Date() }).where(and(eq(schema.posts.id, id), eq(schema.posts.tenantId, actor.tenantId), eq(schema.posts.status, 'draft'))).returning({ id: schema.posts.id });
       return updated.length === 1;
+    },
+    async listCompetitors(token: string | undefined) {
+      const actor = await requireUser(token);
+      return db.select().from(schema.competitors).where(eq(schema.competitors.tenantId, actor.tenantId)).orderBy(desc(schema.competitors.createdAt)).limit(100);
+    },
+    async createCompetitor(token: string | undefined, nameInput: string, urlInput: string) {
+      const actor = await requireUser(token); if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
+      const name = nameInput.trim(); if (!name || name.length > 120) throw new Error('Invalid name');
+      const [competitor] = await db.insert(schema.competitors).values({ id: randomUUID(), tenantId: actor.tenantId, name, publicUrl: publicUrl(urlInput) }).returning();
+      return competitor;
+    },
+    async deleteCompetitor(token: string | undefined, id: string) {
+      const actor = await requireUser(token); if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
+      if (!validId(id)) throw new Error('Invalid competitor');
+      const deleted = await db.delete(schema.competitors).where(and(eq(schema.competitors.tenantId, actor.tenantId), eq(schema.competitors.id, id))).returning({ id: schema.competitors.id });
+      return deleted.length === 1;
+    },
+    async listObservations(token: string | undefined) {
+      const actor = await requireUser(token);
+      return db.select().from(schema.competitorObservations).where(eq(schema.competitorObservations.tenantId, actor.tenantId)).orderBy(desc(schema.competitorObservations.collectedAt)).limit(500);
+    },
+    async addObservation(token: string | undefined, competitorId: string, kind: string, noteInput: string, source: string, observedDate: string) {
+      const actor = await requireUser(token); if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
+      if (!validId(competitorId)) throw new Error('Invalid competitor');
+      if (!['publication', 'offer', 'price', 'positioning', 'other'].includes(kind)) throw new Error('Invalid observation kind');
+      const note = noteInput.trim(); if (!note || note.length > 5000) throw new Error('Invalid note');
+      const sourceUrl = publicUrl(source); if (!validDate(observedDate)) throw new Error('Invalid observation date');
+      const [competitor] = await db.select({ id: schema.competitors.id }).from(schema.competitors).where(and(eq(schema.competitors.tenantId, actor.tenantId), eq(schema.competitors.id, competitorId))).limit(1);
+      if (!competitor) throw new Error('Competitor not found');
+      const [observation] = await db.insert(schema.competitorObservations).values({ id: randomUUID(), tenantId: actor.tenantId, competitorId, kind, note, sourceUrl, observedDate }).returning();
+      return observation;
+    },
+    async deleteObservation(token: string | undefined, id: string) {
+      const actor = await requireUser(token); if (!['owner', 'editor'].includes(actor.role)) throw new Error('Forbidden');
+      if (!validId(id)) throw new Error('Invalid observation');
+      const deleted = await db.delete(schema.competitorObservations).where(and(eq(schema.competitorObservations.tenantId, actor.tenantId), eq(schema.competitorObservations.id, id))).returning({ id: schema.competitorObservations.id });
+      return deleted.length === 1;
     },
     async deleteDraft(token: string | undefined, id: string) {
       const actor = await requireUser(token);

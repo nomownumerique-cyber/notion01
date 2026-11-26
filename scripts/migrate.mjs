@@ -1,6 +1,13 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import pg from 'pg';
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-try { const sql = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'); await pool.query(sql); console.log('Migration 0001 applied'); }
-finally { await pool.end(); }
+const client = await pool.connect();
+try {
+  await client.query('BEGIN');
+  const dir = new URL('../migrations/', import.meta.url);
+  const files = (await readdir(dir)).filter(name => /^\d{4}_[a-z0-9_]+\.sql$/.test(name)).sort();
+  for (const file of files) { await client.query(await readFile(new URL(file, dir), 'utf8')); console.log(`Applied ${file}`); }
+  await client.query('COMMIT');
+} catch (error) { await client.query('ROLLBACK'); throw error; }
+finally { client.release(); await pool.end(); }

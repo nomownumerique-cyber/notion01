@@ -40,3 +40,23 @@ export async function deleteDraft(form: FormData) {
   catch { redirect('/drafts?error=1'); }
   redirect('/drafts');
 }
+export async function createCompetitor(form: FormData) {
+  try { await store.createCompetitor(await token(), value(form, 'name'), value(form, 'publicUrl')); }
+  catch { redirect('/competitors?error=1'); }
+  redirect('/competitors');
+}
+export async function deleteCompetitor(form: FormData) {
+  try { if (!(await store.deleteCompetitor(await token(), value(form, 'id')))) throw new Error('Not found'); }
+  catch { redirect('/competitors?error=1'); }
+  redirect('/competitors');
+}
+export async function addObservation(form: FormData) {
+  try { await store.addObservation(await token(), value(form, 'competitorId'), value(form, 'kind'), value(form, 'note'), value(form, 'sourceUrl'), value(form, 'observedDate')); }
+  catch { redirect('/competitors?error=1'); }
+  redirect('/competitors');
+}
+export async function deleteObservation(form: FormData) {
+  try { if (!(await store.deleteObservation(await token(), value(form, 'id')))) throw new Error('Not found'); }
+  catch { redirect('/competitors?error=1'); }
+  redirect('/competitors');
+}

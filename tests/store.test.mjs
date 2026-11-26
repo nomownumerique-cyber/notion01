@@ -8,6 +8,7 @@ import * as schema from '../src/db/schema.ts';
 
 const client = new PGlite();
 await client.exec(await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
+await client.exec(await readFile(new URL('../migrations/0002_competitors.sql', import.meta.url), 'utf8'));
 const store = createStore(drizzle(client, { schema }));
 let alice, bob, aliceDraft;
 test('register accounts and establish isolated workspaces', async () => {
@@ -57,6 +58,37 @@ test('expired sessions cannot access drafts', async () => {
 test('repeated authentication attempts are rate limited', async () => {
   for (let i = 0; i < 10; i++) await assert.rejects(store.login('unknown@example.com', 'incorrect password value'), /Invalid credentials/);
   await assert.rejects(store.login('unknown@example.com', 'incorrect password value'), /Too many attempts/);
+});
+test('competitors and observations are tenant-isolated and deletions cascade', async () => {
+  const rival = await store.createCompetitor(alice, 'Shop X', 'https://example.com/shop');
+  assert.deepEqual((await store.listCompetitors(alice)).map(c => c.name), ['Shop X']);
+  assert.equal((await store.listCompetitors(bob)).length, 0);
+  await assert.rejects(store.addObservation(bob, rival.id, 'offer', 'Hidden', 'https://example.com/offer', '2025-01-01'), /not found/);
+  const observation = await store.addObservation(alice, rival.id, 'price', 'Price shown: 1500 DZD', 'https://example.com/product', '2025-01-01');
+  assert.equal(observation.observedDate, '2025-01-01'); assert.ok(observation.collectedAt instanceof Date);
+  assert.equal((await store.listObservations(bob)).length, 0);
+  assert.equal(await store.deleteObservation(bob, observation.id), false);
+  assert.equal(await store.deleteCompetitor(bob, rival.id), false);
+  assert.equal(await store.deleteCompetitor(alice, rival.id), true);
+  assert.equal((await store.listObservations(alice)).length, 0);
+});
+test('competitor input validation rejects unsafe URLs and invalid observations', async () => {
+  for (const url of ['javascript:alert(1)', 'http://example.com', 'https://user:pass@example.com', 'https://localhost/']) {
+    await assert.rejects(store.createCompetitor(alice, 'Shop', url), /Invalid public URL/);
+  }
+  const rival = await store.createCompetitor(alice, 'Shop Y', 'https://example.com/');
+  for (const date of ['2025-02-30', '3000-01-01', 'not-a-date']) await assert.rejects(store.addObservation(alice, rival.id, 'offer', 'A', 'https://example.com', date), /Invalid observation date/);
+  await assert.rejects(store.addObservation(alice, rival.id, 'bogus', 'A', 'https://example.com', '2025-01-01'), /Invalid observation kind/);
+  await assert.rejects(store.addObservation(alice, rival.id, 'offer', ' ', 'https://example.com', '2025-01-01'), /Invalid note/);
+  await assert.rejects(store.listCompetitors('invalid'), /Unauthorized/);
+  await store.deleteCompetitor(alice, rival.id);
+});
+test('reviewers can read competitors but cannot change them', async () => {
+  const actor = await store.current(alice);
+  await client.query("UPDATE memberships SET role = 'reviewer' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
+  await store.listCompetitors(alice);
+  await assert.rejects(store.createCompetitor(alice, 'Shop', 'https://example.com'), /Forbidden/);
+  await client.query("UPDATE memberships SET role = 'owner' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
 });
 test('removing membership immediately revokes access', async () => {
   const actor = await store.current(bob);

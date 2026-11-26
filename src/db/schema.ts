@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, integer, primaryKey, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, integer, primaryKey, uniqueIndex, date, foreignKey } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey(), email: varchar('email', { length: 254 }).notNull().unique(),
@@ -23,3 +23,14 @@ export const posts = pgTable('posts', {
 export const authAttempts = pgTable('auth_attempts', {
   key: varchar('key', { length: 64 }).primaryKey(), attempts: integer('attempts').notNull(), windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
 });
+
+export const competitors = pgTable('competitors', {
+  id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 120 }).notNull(), publicUrl: text('public_url').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('competitors_tenant_id_unique').on(t.tenantId, t.id)]);
+export const competitorObservations = pgTable('competitor_observations', {
+  id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull(), competitorId: uuid('competitor_id').notNull(),
+  kind: varchar('kind', { length: 20 }).notNull(), note: text('note').notNull(), sourceUrl: text('source_url').notNull(),
+  observedDate: date('observed_date').notNull(), collectedAt: timestamp('collected_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [foreignKey({ columns: [t.tenantId, t.competitorId], foreignColumns: [competitors.tenantId, competitors.id] }).onDelete('cascade')]);
