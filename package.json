@@ -15,8 +15,11 @@
     "test:e2e": "node scripts/test-e2e.mjs"
   },
   "dependencies": {
+    "dejavu-fonts-ttf": "^2.37.3",
     "drizzle-orm": "^0.45.4",
+    "fontkit": "^3.0.0",
     "next": "^16.4.6",
+    "pdfkit": "^0.21.0",
     "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -25,7 +28,9 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.6.0",
     "@electric-sql/pglite-socket": "^0.3.0",
+    "@types/fontkit": "^2.0.9",
     "@types/node": "^26.6.11",
+    "@types/pdfkit": "^0.17.7",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.3",
     "@types/react-dom": "^19.3.0",
