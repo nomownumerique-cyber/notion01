@@ -116,7 +116,7 @@ try {
   const anonymous = await browser.newContext();
   assert.equal((await anonymous.request.get(`${base}/api/reports/content.csv?start=${planDate}&end=${planDate}`)).status(), 401);
   await anonymous.close();
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Télécharger le CSV' }).click()]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('region', { name: 'Contenus planifiés · CSV' }).getByRole('button', { name: 'Télécharger le CSV' }).click()]);
   assert.match(download.suggestedFilename(), /^contenus-.*\.csv$/);
   await page.getByRole('link', { name: 'Concurrents', exact: true }).click();
   await page.waitForURL('**/competitors');
@@ -132,7 +132,28 @@ try {
   await page.getByRole('button', { name: 'Enregistrer l’observation' }).click();
   await page.getByText('Prix publié : 1 500 DZD').waitFor();
   assert.match(await page.locator('main').innerText(), /Observé le 2025-01-01/);
+  const rivalReport = await a.request.get(`${base}/api/reports/competitors.csv?start=2025-01-01&end=2025-01-01`);
+  assert.equal(rivalReport.status(), 200);
+  assert.match(await rivalReport.text(), /Concurrent A/); assert.match(await rivalReport.text(), /Prix publié : 1 500 DZD/);
+  assert.match(await rivalReport.text(), /https:\/\/example.com\/product/);
+  assert.match(rivalReport.headers()['cache-control'], /no-store/);
+  assert.doesNotMatch(await (await b.request.get(`${base}/api/reports/competitors.csv?start=2025-01-01&end=2025-01-01`)).text(), /Concurrent A/);
+  const signedOut = await browser.newContext();
+  assert.equal((await signedOut.request.get(`${base}/api/reports/competitors.csv?start=2025-01-01&end=2025-01-01`)).status(), 401);
+  await signedOut.close();
+  assert.equal((await a.request.get(`${base}/api/reports/competitors.csv?start=2025-02-30&end=2025-03-01`)).status(), 400);
+  await page.goto(`${base}/reports`);
+  const rivalForm = page.getByRole('region', { name: 'Observations concurrentielles · CSV' });
+  await rivalForm.getByLabel('Date de début').fill('2025-01-01'); await rivalForm.getByLabel('Date de fin').fill('2025-01-01');
+  const [rivalDownload] = await Promise.all([page.waitForEvent('download'), rivalForm.getByRole('button', { name: 'Télécharger le CSV' }).click()]);
+  assert.equal(rivalDownload.suggestedFilename(), 'concurrents-2025-01-01-2025-01-01.csv');
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-reports-desktop.png'), fullPage: true });
+  await page.goto(`${base}/competitors`);
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-competitors-desktop.png'), fullPage: true });
+  await mobile.goto(`${base}/reports`);
+  assert.equal(await mobile.getByRole('region', { name: 'Observations concurrentielles · CSV' }).count(), 1);
+  assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  if (process.env.SCREENSHOT_DIR) await mobile.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-reports-mobile.png'), fullPage: true });
   await mobile.getByRole('link', { name: 'Concurrents', exact: true }).click();
   await mobile.waitForURL('**/competitors');
   assert.match(await mobile.locator('main').innerText(), /Aucun concurrent enregistré/);
@@ -152,6 +173,6 @@ try {
   await page.getByLabel('Mot de passe').fill('long-test-password-A');
   await page.getByRole('button', { name: 'Se connecter' }).click();
   await page.waitForURL('**/dashboard');
-  console.log('E2E passed: registration, sign-in/out, drafts, calendar, dashboard comparisons, approvals, content reuse, CSV exports, competitor records, tenant isolation, desktop and mobile.');
+  console.log('E2E passed: registration, sign-in/out, drafts, calendar, dashboard comparisons, approvals, content reuse, content and competitor CSV exports, competitor records, tenant isolation, desktop and mobile.');
   await a.close(); await b.close();
 } finally { await browser.close(); }

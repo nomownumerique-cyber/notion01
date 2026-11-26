@@ -166,6 +166,18 @@ test('competitors and observations are tenant-isolated and deletions cascade', a
   assert.equal(await store.deleteCompetitor(alice, rival.id), true);
   assert.equal((await store.listObservations(alice)).length, 0);
 });
+test('competitor report filters observations and enforces tenant isolation', async () => {
+  const rival = await store.createCompetitor(alice, 'Rival', 'https://example.com/shop');
+  await store.addObservation(alice, rival.id, 'price', '=formula', 'https://example.com/item', '2025-01-02');
+  await store.addObservation(alice, rival.id, 'offer', 'Outside', 'https://example.com/offer', '2025-01-03');
+  const rows = await store.reportCompetitorObservations(alice, '2025-01-01', '2025-01-02');
+  assert.equal(rows.length, 1); assert.equal(rows[0].name, 'Rival'); assert.equal(rows[0].note, '=formula');
+  assert.equal(rows[0].sourceUrl, 'https://example.com/item'); assert.ok(rows[0].collectedAt instanceof Date);
+  assert.equal((await store.reportCompetitorObservations(bob, '2025-01-01', '2025-01-02')).length, 0);
+  await assert.rejects(store.reportCompetitorObservations('bad', '2025-01-01', '2025-01-02'), /Unauthorized/);
+  await assert.rejects(store.reportCompetitorObservations(alice, '2025-01-01', '2026-01-02'), /Invalid report range/);
+  await store.deleteCompetitor(alice, rival.id);
+});
 test('competitor input validation rejects unsafe URLs and invalid observations', async () => {
   for (const url of ['javascript:alert(1)', 'http://example.com', 'https://user:pass@example.com', 'https://localhost/']) {
     await assert.rejects(store.createCompetitor(alice, 'Shop', url), /Invalid public URL/);
