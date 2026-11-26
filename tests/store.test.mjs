@@ -124,6 +124,25 @@ test('editorial workflow isolates tenants and logs real transitions', async () =
   await store.deleteDraft(alice, idea.id);
   assert.equal((await store.listEditorialEvents(alice)).filter(e => e.postId === idea.id).length, 0);
 });
+test('reuse copies content into an undated draft, respecting tenant and role', async () => {
+  const original = await store.createDraft(alice, 'Campaign content');
+  await store.planDraft(alice, original.id, '2026-02-12', 'Launch');
+  await store.transitionEditorial(alice, original.id, 'review', 1);
+  await store.transitionEditorial(alice, original.id, 'approved', 2);
+  await assert.rejects(store.reuseEditorial(bob, original.id), /not found/);
+  const copy = await store.reuseEditorial(alice, original.id);
+  assert.notEqual(copy.id, original.id); assert.equal(copy.text, 'Campaign content');
+  assert.equal(copy.category, 'Launch'); assert.equal(copy.status, 'draft'); assert.equal(copy.plannedDate, null); assert.equal(copy.version, 0);
+  assert.equal((await store.listEditorialEvents(alice)).filter(e => e.postId === copy.id).length, 0);
+  const actor = await store.current(alice);
+  await client.query("UPDATE memberships SET role = 'reviewer' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
+  await assert.rejects(store.reuseEditorial(alice, original.id), /Forbidden/);
+  await client.query("UPDATE memberships SET role = 'owner' WHERE tenant_id = $1 AND user_id = $2", [actor.tenantId, actor.userId]);
+  await assert.rejects(store.reuseEditorial('bad', original.id), /Unauthorized/);
+  await store.deleteDraft(alice, copy.id);
+  await store.transitionEditorial(alice, original.id, 'draft', 3);
+  await store.deleteDraft(alice, original.id);
+});
 test('workflow event failure rolls back the status change', async () => {
   const idea = await store.createIdea(alice, 'Atomic update');
   await client.exec("ALTER TABLE editorial_events ADD CONSTRAINT test_reject_draft CHECK (to_status <> 'draft')");
