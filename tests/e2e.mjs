@@ -7,7 +7,15 @@ const suffix = Date.now().toString();
 try {
   const a = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await a.newPage();
-  await page.goto(`${base}/register`);
+  await page.goto(`${base}/`);
+  assert.match(await page.locator('h1').innerText(), /Vos idées méritent/);
+  assert.match(await page.locator('main').innerText(), /ne sont pas encore disponibles/);
+  assert.equal((await a.request.get(`${base}/landing-visual`)).headers()['content-type'], 'image/webp');
+  assert.equal(await page.locator('.landing-photo').evaluate(img => img.complete && img.naturalWidth > 0), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-landing-desktop.png'), fullPage: true });
+  await page.getByRole('link', { name: /Créer mon espace/ }).first().click();
+  await page.waitForURL('**/register');
   await page.getByLabel('Nom de l’espace').fill('Boutique A');
   await page.getByLabel('Email').fill(`alice${suffix}@example.com`);
   await page.getByLabel('Mot de passe').fill('long-test-password-A');
@@ -68,6 +76,11 @@ try {
   await page.getByRole('button', { name: 'Envoyer en validation' }).waitFor();
   const b = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const mobile = await b.newPage();
+  await mobile.goto(`${base}/`);
+  assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  if (process.env.SCREENSHOT_DIR) await mobile.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-landing-mobile.png'), fullPage: true });
+  await mobile.getByRole('link', { name: 'Se connecter', exact: true }).first().click();
+  await mobile.waitForURL('**/login');
   await mobile.goto(`${base}/register`);
   await mobile.getByLabel('Nom de l’espace').fill('Boutique B');
   await mobile.getByLabel('Email').fill(`bob${suffix}@example.com`);
@@ -137,6 +150,6 @@ try {
   await page.getByLabel('Mot de passe').fill('long-test-password-A');
   await page.getByRole('button', { name: 'Se connecter' }).click();
   await page.waitForURL('**/dashboard');
-  console.log('E2E passed: registration, sign-in/out, drafts, calendar, dashboard comparisons, approvals, CSV exports, competitor records, tenant isolation, desktop and mobile.');
+  console.log('E2E passed: landing, registration, sign-in/out, drafts, calendar, dashboard comparisons, approvals, CSV exports, competitor records, tenant isolation, desktop and mobile.');
   await a.close(); await b.close();
 } finally { await browser.close(); }
