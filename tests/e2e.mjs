@@ -1,6 +1,8 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+const extractPdf = buffer => { const result = spawnSync('pdftotext', ['-', '-'], { input: buffer, encoding: 'utf8' }); if (result.error && result.error.code === 'ENOENT') return null; assert.equal(result.status, 0, result.stderr); return result.stdout; };
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:13000';
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), args: ['--no-sandbox'] });
 const suffix = Date.now().toString();
@@ -116,7 +118,18 @@ try {
   const anonymous = await browser.newContext();
   assert.equal((await anonymous.request.get(`${base}/api/reports/content.csv?start=${planDate}&end=${planDate}`)).status(), 401);
   await anonymous.close();
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('region', { name: 'Contenus planifiés · CSV' }).getByRole('button', { name: 'Télécharger le CSV' }).click()]);
+  const pdfResponse = await a.request.get(`${base}/api/reports/content.pdf?start=${planDate}&end=${planDate}`);
+  assert.equal(pdfResponse.status(), 200); assert.match(pdfResponse.headers()['content-type'], /application\/pdf/);
+  assert.match(pdfResponse.headers()['cache-control'], /no-store/);
+  const pdfBuffer = await pdfResponse.body(); assert.equal(pdfBuffer.subarray(0,5).toString(), '%PDF-');
+  const pdfText = extractPdf(pdfBuffer); if (pdfText !== null) assert.match(pdfText, /Brouillon modifié A/);
+  const otherPdf = await b.request.get(`${base}/api/reports/content.pdf?start=${planDate}&end=${planDate}`);
+  assert.equal(otherPdf.status(), 200); const otherText = extractPdf(await otherPdf.body()); if (otherText !== null) assert.doesNotMatch(otherText, /Brouillon modifié A/);
+  const noAuthPdf = await browser.newContext(); assert.equal((await noAuthPdf.request.get(`${base}/api/reports/content.pdf?start=${planDate}&end=${planDate}`)).status(), 401); await noAuthPdf.close();
+  assert.equal((await a.request.get(`${base}/api/reports/content.pdf?start=2026-02-30&end=2026-03-01`)).status(), 400);
+  const [pdfDownload] = await Promise.all([page.waitForEvent('download'), page.getByRole('region', { name: 'Contenus planifiés · CSV / PDF' }).getByRole('button', { name: 'Télécharger le PDF' }).click()]);
+  assert.match(pdfDownload.suggestedFilename(), /^contenus-.*\.pdf$/);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('region', { name: 'Contenus planifiés · CSV / PDF' }).getByRole('button', { name: 'Télécharger le CSV' }).click()]);
   assert.match(download.suggestedFilename(), /^contenus-.*\.csv$/);
   await page.getByRole('link', { name: 'Concurrents', exact: true }).click();
   await page.waitForURL('**/competitors');
@@ -132,6 +145,12 @@ try {
   await page.getByRole('button', { name: 'Enregistrer l’observation' }).click();
   await page.getByText('Prix publié : 1 500 DZD').waitFor();
   assert.match(await page.locator('main').innerText(), /Observé le 2025-01-01/);
+  const rivalPdf = await a.request.get(`${base}/api/reports/competitors.pdf?start=2025-01-01&end=2025-01-01`);
+  assert.equal(rivalPdf.status(), 200); const rivalPdfBuffer = await rivalPdf.body(); assert.equal(rivalPdfBuffer.subarray(0,5).toString(), '%PDF-');
+  const rivalText = extractPdf(rivalPdfBuffer); if (rivalText !== null) { assert.match(rivalText, /Concurrent A/); assert.match(rivalText, /Prix publié/); assert.match(rivalText, /example.com\/product/); }
+  const rivalOtherPdf = await b.request.get(`${base}/api/reports/competitors.pdf?start=2025-01-01&end=2025-01-01`);
+  const rivalOtherText = extractPdf(await rivalOtherPdf.body()); if (rivalOtherText !== null) assert.doesNotMatch(rivalOtherText, /Concurrent A/);
+  if (process.env.SCREENSHOT_DIR) { const { writeFile } = await import('node:fs/promises'); await writeFile(join(process.env.SCREENSHOT_DIR, 'marketing-competitor-report-test.pdf'), rivalPdfBuffer); }
   const rivalReport = await a.request.get(`${base}/api/reports/competitors.csv?start=2025-01-01&end=2025-01-01`);
   assert.equal(rivalReport.status(), 200);
   assert.match(await rivalReport.text(), /Concurrent A/); assert.match(await rivalReport.text(), /Prix publié : 1 500 DZD/);
@@ -143,15 +162,17 @@ try {
   await signedOut.close();
   assert.equal((await a.request.get(`${base}/api/reports/competitors.csv?start=2025-02-30&end=2025-03-01`)).status(), 400);
   await page.goto(`${base}/reports`);
-  const rivalForm = page.getByRole('region', { name: 'Observations concurrentielles · CSV' });
+  const rivalForm = page.getByRole('region', { name: 'Observations concurrentielles · CSV / PDF' });
   await rivalForm.getByLabel('Date de début').fill('2025-01-01'); await rivalForm.getByLabel('Date de fin').fill('2025-01-01');
   const [rivalDownload] = await Promise.all([page.waitForEvent('download'), rivalForm.getByRole('button', { name: 'Télécharger le CSV' }).click()]);
   assert.equal(rivalDownload.suggestedFilename(), 'concurrents-2025-01-01-2025-01-01.csv');
+  const [rivalPdfDownload] = await Promise.all([page.waitForEvent('download'), rivalForm.getByRole('button', { name: 'Télécharger le PDF' }).click()]);
+  assert.equal(rivalPdfDownload.suggestedFilename(), 'concurrents-2025-01-01-2025-01-01.pdf');
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-reports-desktop.png'), fullPage: true });
   await page.goto(`${base}/competitors`);
   if (process.env.SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-competitors-desktop.png'), fullPage: true });
   await mobile.goto(`${base}/reports`);
-  assert.equal(await mobile.getByRole('region', { name: 'Observations concurrentielles · CSV' }).count(), 1);
+  assert.equal(await mobile.getByRole('region', { name: 'Observations concurrentielles · CSV / PDF' }).count(), 1);
   assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   if (process.env.SCREENSHOT_DIR) await mobile.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'marketing-reports-mobile.png'), fullPage: true });
   await mobile.getByRole('link', { name: 'Concurrents', exact: true }).click();
@@ -173,6 +194,14 @@ try {
   await page.getByLabel('Mot de passe').fill('long-test-password-A');
   await page.getByRole('button', { name: 'Se connecter' }).click();
   await page.waitForURL('**/dashboard');
-  console.log('E2E passed: registration, sign-in/out, drafts, calendar, dashboard comparisons, approvals, content reuse, content and competitor CSV exports, competitor records, tenant isolation, desktop and mobile.');
+  console.log('E2E passed: registration, sign-in/out, drafts, calendar, dashboard comparisons, approvals, content reuse, content and competitor CSV/PDF exports, competitor records, tenant isolation, desktop and mobile.');
+  const c = await browser.newContext(); const arabic = await c.newPage();
+  await arabic.goto(`${base}/register`); await arabic.getByLabel('Nom de l’espace').fill('متجر');
+  await arabic.getByLabel('Email').fill(`arabic${suffix}@example.com`); await arabic.getByLabel('Mot de passe').fill('long-test-password-C');
+  await arabic.getByRole('button', { name: 'Créer mon compte' }).click(); await arabic.waitForURL('**/dashboard');
+  assert.equal((await c.request.get(`${base}/api/reports/content.pdf?start=${planDate}&end=${planDate}`)).status(), 422);
+  assert.equal((await c.request.get(`${base}/api/reports/competitors.pdf?start=${planDate}&end=${planDate}`)).status(), 422);
+  assert.equal((await c.request.get(`${base}/api/reports/content.csv?start=${planDate}&end=${planDate}`)).status(), 200);
+  await c.close();
   await a.close(); await b.close();
 } finally { await browser.close(); }
